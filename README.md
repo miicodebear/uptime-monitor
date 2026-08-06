@@ -9,19 +9,21 @@ A production-ready PWA that monitors 2–3 of your Cloudflare-backed websites an
 ```
 uptime-monitor/
 ├── api/
-│   ├── check-and-notify.js   # Ping sites + send push alerts
+│   ├── check-and-notify.js   # Cron entry point: ping sites + send push alerts
+│   ├── run-check.js          # Public "Check now" button (30s cooldown)
 │   ├── status.js             # Dashboard status API
 │   ├── subscribe.js          # Save push subscriptions
 │   └── vapid-public-key.js   # Expose VAPID public key to the browser
 ├── lib/
-│   ├── sites.js              # ← EDIT YOUR 3 WEBSITE URLS HERE
+│   ├── sites.js              # ← EDIT YOUR WEBSITE URLS HERE
+│   ├── runCheck.js           # Shared probe + persist + notify pipeline
 │   ├── check.js              # Cloudflare-friendly HTTP probe
 │   ├── push.js               # web-push helpers
 │   └── storage.js            # Upstash Redis persistence
 ├── public/
-│   ├── index.html            # Dashboard UI
+│   ├── index.html            # Dashboard UI + install instructions
 │   ├── styles.css
-│   ├── app.js                # SW registration + subscribe + status fetch
+│   ├── app.js                # SW registration, subscribe, install, status
 │   ├── sw.js                 # Push + notificationclick handler
 │   ├── manifest.json         # Standalone PWA manifest
 │   └── icons/                # 192 / 512 PNG icons
@@ -29,6 +31,32 @@ uptime-monitor/
 ├── vercel.json
 └── README.md
 ```
+
+---
+
+## Dashboard
+
+The dashboard shows, for every monitored site:
+
+- **UP / DOWN / UNKNOWN** badge
+- Response time in milliseconds
+- HTTP status code (or the timeout / connection error)
+- How long ago the last check ran
+- Summary tiles for monitored / online / offline counts
+
+It refreshes automatically every 60 seconds. **Check now** triggers an
+immediate probe through `/api/run-check`, which is throttled to one run per 30
+seconds so the button cannot hammer your origins.
+
+## Installing the app
+
+Open the deployed URL and use **Install App** (Chrome / Edge) or
+**How to install on my phone** for step-by-step instructions.
+
+- **iPhone / iPad:** Safari → Share → Add to Home Screen. iOS only delivers web
+  push to apps launched from the home screen, so install before subscribing.
+- **Android:** Chrome → ⋮ → Install app.
+- **Desktop:** click the install icon in the address bar.
 
 ---
 
