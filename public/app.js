@@ -246,9 +246,11 @@
 
   function openSheet() {
     installSheet.hidden = false;
+    installSheet.classList.add('is-open');
   }
 
   function closeSheet() {
+    installSheet.classList.remove('is-open');
     installSheet.hidden = true;
   }
 
@@ -276,9 +278,16 @@
   });
 
   howInstallBtn.addEventListener('click', openSheet);
-  sheetClose.addEventListener('click', closeSheet);
+  sheetClose.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeSheet();
+  });
   installSheet.addEventListener('click', (event) => {
     if (event.target === installSheet) closeSheet();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !installSheet.hidden) closeSheet();
   });
 
   checkBtn.addEventListener('click', runCheckNow);

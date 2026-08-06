@@ -394,12 +394,21 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: 50;
-  display: grid;
+  display: none;
   place-items: center;
   padding: 1rem;
   background: rgba(4, 12, 20, 0.72);
   backdrop-filter: blur(6px);
+}
+
+.sheet.is-open {
+  display: grid;
   animation: fade 0.2s ease both;
+}
+
+/* Ensure [hidden] always wins over display utilities */
+.sheet[hidden] {
+  display: none !important;
 }
 
 .sheet-card {
