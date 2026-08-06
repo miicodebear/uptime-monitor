@@ -160,47 +160,24 @@ Apply the variables to **Production** (and Preview if you want), then **Redeploy
 
 ---
 
-## 6. Connect a free cron timer (every 2–5 minutes)
+## Automatic checks (no “Check now” needed)
 
-Vercel Hobby does not include reliable built-in cron for this use case at zero cost in all plans, so use a free external ping service.
+Push alerts are sent by the server when a site transitions **UP → DOWN**.
+That only happens when `/api/check-and-notify` is called on a schedule.
 
-### Using [cron-job.org](https://cron-job.org)
+This repo includes a **GitHub Actions** workflow
+(`.github/workflows/uptime-check.yml`) that hits that endpoint about every
+**5 minutes**. Keep the page closed — monitoring still runs.
 
-1. Create a free account
-2. Create a new cron job
-3. **URL** (pick one style):
+Required GitHub setup (one time):
 
-   **Header style (preferred):**
-   ```text
-   https://YOUR-PROJECT.vercel.app/api/check-and-notify
-   ```
-   Then under request headers add:
-   ```text
-   Authorization: Bearer YOUR_CRON_SECRET
-   ```
+1. Repo → **Settings → Secrets and variables → Actions**
+2. Secret `CRON_SECRET` = the same value as on Vercel
+3. Optional variable `CHECK_URL` =
+   `https://uptime.codebear.win/api/check-and-notify`
 
-   **Query style (if headers are awkward):**
-   ```text
-   https://YOUR-PROJECT.vercel.app/api/check-and-notify?secret=YOUR_CRON_SECRET
-   ```
-
-4. **Schedule:** every `2`–`5` minutes (e.g. every 5 minutes)
-5. Method: `GET` or `POST`
-6. Save and run once manually to verify
-
-A successful response looks like:
-
-```json
-{
-  "ok": true,
-  "checkedAt": "2026-08-06T03:00:00.000Z",
-  "sites": [
-    { "name": "Website A", "domain": "website-a.com", "status": "UP", ... }
-  ],
-  "alertsSent": []
-}
-```
-
+You can also use [cron-job.org](https://cron-job.org) with the same URL and
+`?secret=YOUR_CRON_SECRET` if you prefer.
 ---
 
 ## 7. Enable push alerts on your phone / desktop

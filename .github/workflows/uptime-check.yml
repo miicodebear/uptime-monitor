@@ -1,0 +1,39 @@
+name: Uptime check
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub may delay a few minutes on free plans)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping check-and-notify
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CHECK_URL: ${{ vars.CHECK_URL }}
+        run: |
+          set -euo pipefail
+          URL="${CHECK_URL:-https://uptime.codebear.win/api/check-and-notify}"
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "Missing CRON_SECRET repository secret"
+            exit 1
+          fi
+          echo "Checking: $URL"
+          curl -fsS -X GET \
+            --max-time 55 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${URL}" | tee /tmp/check-result.json
+          echo
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/check-result.json"))
+          assert data.get("ok") is True, data
+          for site in data.get("sites", []):
+              print(f"{site.get('domain')}: {site.get('status')} ({site.get('statusCode')})")
+          alerts = data.get("alertsSent") or []
+          print(f"alertsSent: {len(alerts)}")
+          PY
