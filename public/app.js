@@ -4,51 +4,22 @@
   const siteListEl = document.getElementById('site-list');
   const lastCheckedEl = document.getElementById('last-checked');
   const subscribeBtn = document.getElementById('subscribe-btn');
-  const refreshBtn = document.getElementById('refresh-btn');
+  const checkBtn = document.getElementById('check-btn');
+  const installBtn = document.getElementById('install-btn');
+  const howInstallBtn = document.getElementById('how-install-btn');
+  const installSheet = document.getElementById('install-sheet');
+  const sheetClose = document.getElementById('sheet-close');
   const subscribeStatusEl = document.getElementById('subscribe-status');
+  const statTotal = document.getElementById('stat-total');
+  const statUp = document.getElementById('stat-up');
+  const statDown = document.getElementById('stat-down');
+
+  let deferredInstallPrompt = null;
 
   function setSubscribeMessage(message, type) {
     subscribeStatusEl.textContent = message || '';
     subscribeStatusEl.classList.remove('ok', 'err');
     if (type) subscribeStatusEl.classList.add(type);
-  }
-
-  function formatCheckedAt(iso) {
-    if (!iso) return 'No checks yet';
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return 'No checks yet';
-    return `Last check · ${date.toLocaleString()}`;
-  }
-
-  function renderSites(sites) {
-    siteListEl.classList.remove('skeleton');
-
-    if (!Array.isArray(sites) || sites.length === 0) {
-      siteListEl.innerHTML =
-        '<li class="site-item"><div><div class="site-name">No sites configured</div><div class="site-url">Update lib/sites.js</div></div><span class="badge unknown">N/A</span></li>';
-      return;
-    }
-
-    siteListEl.innerHTML = sites
-      .map((site) => {
-        const status = (site.status || 'UNKNOWN').toUpperCase();
-        const badgeClass =
-          status === 'UP' ? 'up' : status === 'DOWN' ? 'down' : 'unknown';
-        const safeName = escapeHtml(site.name || site.domain || 'Site');
-        const safeUrl = escapeHtml(site.url || '#');
-        const displayUrl = escapeHtml(site.domain || site.url || '');
-
-        return `
-          <li class="site-item">
-            <div>
-              <div class="site-name">${safeName}</div>
-              <div class="site-url"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${displayUrl}</a></div>
-            </div>
-            <span class="badge ${badgeClass}">${escapeHtml(status)}</span>
-          </li>
-        `;
-      })
-      .join('');
   }
 
   function escapeHtml(value) {
@@ -60,25 +31,121 @@
       .replace(/'/g, '&#39;');
   }
 
-  async function fetchStatus() {
-    const response = await fetch('/api/status', { cache: 'no-store' });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `Status request failed (${response.status})`);
+  function formatRelative(iso) {
+    if (!iso) return 'never checked';
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return 'never checked';
+
+    const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  }
+
+  function renderStats(sites) {
+    const list = Array.isArray(sites) ? sites : [];
+    statTotal.textContent = list.length;
+    statUp.textContent = list.filter((site) => site.up === true).length;
+    statDown.textContent = list.filter((site) => site.up === false).length;
+  }
+
+  function buildMeta(site) {
+    const parts = [];
+
+    if (site.responseTimeMs != null) {
+      parts.push(`${site.responseTimeMs} ms`);
     }
-    return response.json();
+    if (site.statusCode != null) {
+      parts.push(`HTTP ${site.statusCode}`);
+    }
+    if (site.error) {
+      parts.push(`<span class="fail">${escapeHtml(site.error)}</span>`);
+    }
+    parts.push(formatRelative(site.checkedAt));
+
+    return parts.join('<span class="sep">•</span>');
+  }
+
+  function renderSites(sites) {
+    siteListEl.classList.remove('skeleton');
+
+    if (!Array.isArray(sites) || sites.length === 0) {
+      siteListEl.innerHTML =
+        '<li class="site-item"><div class="site-main"><div class="site-name">No sites configured</div><div class="site-meta">Add URLs in lib/sites.js</div></div><span class="badge unknown">N/A</span></li>';
+      return;
+    }
+
+    siteListEl.innerHTML = sites
+      .map((site) => {
+        const status = (site.status || 'UNKNOWN').toUpperCase();
+        const badgeClass =
+          status === 'UP' ? 'up' : status === 'DOWN' ? 'down' : 'unknown';
+
+        return `
+          <li class="site-item">
+            <div class="site-main">
+              <div class="site-name">${escapeHtml(site.name || site.domain || 'Site')}</div>
+              <div class="site-url">
+                <a href="${escapeHtml(site.url || '#')}" target="_blank" rel="noopener noreferrer">
+                  ${escapeHtml(site.domain || site.url || '')}
+                </a>
+              </div>
+              <div class="site-meta">${buildMeta(site)}</div>
+            </div>
+            <span class="badge ${badgeClass}">${escapeHtml(status)}</span>
+          </li>
+        `;
+      })
+      .join('');
+  }
+
+  function applyStatus(data) {
+    renderSites(data.sites);
+    renderStats(data.sites);
+    lastCheckedEl.textContent = data.checkedAt
+      ? `Last check ${formatRelative(data.checkedAt)}`
+      : 'No checks recorded yet';
   }
 
   async function loadDashboard() {
     try {
-      lastCheckedEl.textContent = 'Checking…';
-      const data = await fetchStatus();
-      renderSites(data.sites);
-      lastCheckedEl.textContent = formatCheckedAt(data.checkedAt);
+      const response = await fetch('/api/status', { cache: 'no-store' });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Status request failed (${response.status})`);
+      }
+      applyStatus(await response.json());
     } catch (error) {
-      lastCheckedEl.textContent = 'Status unavailable';
       siteListEl.classList.remove('skeleton');
+      lastCheckedEl.textContent = 'Status unavailable';
       setSubscribeMessage(error.message, 'err');
+    }
+  }
+
+  async function runCheckNow() {
+    checkBtn.disabled = true;
+    checkBtn.textContent = 'Checking…';
+
+    try {
+      const response = await fetch('/api/run-check', { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok || data.throttled) {
+        applyStatus(data);
+      }
+      if (data.throttled) {
+        setSubscribeMessage(data.error, 'err');
+      } else if (!response.ok) {
+        throw new Error(data.error || `Check failed (${response.status})`);
+      }
+    } catch (error) {
+      setSubscribeMessage(error.message, 'err');
+    } finally {
+      checkBtn.disabled = false;
+      checkBtn.textContent = 'Check now';
     }
   }
 
@@ -117,22 +184,24 @@
     return data.publicKey;
   }
 
-  async function saveSubscription(subscription) {
-    const response = await fetch('/api/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription),
-    });
+  function isStandalone() {
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+    );
+  }
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data.error || `Subscribe failed (${response.status})`);
-    }
-    return data;
+  function isIos() {
+    return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
   }
 
   async function subscribeToPush() {
     if (!('Notification' in window) || !('PushManager' in window)) {
+      if (isIos() && !isStandalone()) {
+        throw new Error(
+          'On iPhone you must add this app to your Home Screen first, then subscribe from there.'
+        );
+      }
       throw new Error('Push notifications are not supported in this browser.');
     }
 
@@ -156,27 +225,63 @@
       });
     }
 
-    setSubscribeMessage('Saving subscription to server…');
-    await saveSubscription(subscription.toJSON());
+    setSubscribeMessage('Saving subscription…');
+    const response = await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(subscription.toJSON()),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || `Subscribe failed (${response.status})`);
+    }
 
     subscribeBtn.textContent = 'Alerts Enabled';
-    setSubscribeMessage('You will receive a push when any monitored site goes down.', 'ok');
+    setSubscribeMessage(
+      'This device will be notified whenever a monitored site goes down.',
+      'ok'
+    );
   }
 
-  async function init() {
-    try {
-      await registerServiceWorker();
-    } catch (error) {
-      console.warn('Service worker registration failed:', error);
-    }
-
-    await loadDashboard();
-
-    if (Notification.permission === 'granted') {
-      subscribeBtn.textContent = 'Alerts Enabled';
-      setSubscribeMessage('Push permission already granted on this device.', 'ok');
-    }
+  function openSheet() {
+    installSheet.hidden = false;
   }
+
+  function closeSheet() {
+    installSheet.hidden = true;
+  }
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    installBtn.hidden = false;
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    installBtn.hidden = true;
+    setSubscribeMessage('App installed. Open it from your home screen.', 'ok');
+  });
+
+  installBtn.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) {
+      openSheet();
+      return;
+    }
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    installBtn.hidden = true;
+  });
+
+  howInstallBtn.addEventListener('click', openSheet);
+  sheetClose.addEventListener('click', closeSheet);
+  installSheet.addEventListener('click', (event) => {
+    if (event.target === installSheet) closeSheet();
+  });
+
+  checkBtn.addEventListener('click', runCheckNow);
 
   subscribeBtn.addEventListener('click', async () => {
     try {
@@ -187,9 +292,25 @@
     }
   });
 
-  refreshBtn.addEventListener('click', () => {
-    loadDashboard();
-  });
+  async function init() {
+    try {
+      await registerServiceWorker();
+    } catch (error) {
+      console.warn('Service worker registration failed:', error);
+    }
+
+    await loadDashboard();
+
+    if (isStandalone()) {
+      installBtn.hidden = true;
+      howInstallBtn.hidden = true;
+    }
+
+    if ('Notification' in window && Notification.permission === 'granted') {
+      subscribeBtn.textContent = 'Alerts Enabled';
+      setSubscribeMessage('Push permission already granted on this device.', 'ok');
+    }
+  }
 
   init();
   setInterval(loadDashboard, 60 * 1000);
