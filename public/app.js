@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const ADMIN_KEY_STORAGE = 'uptimePulseAdminKey';
+
   const siteListEl = document.getElementById('site-list');
   const lastCheckedEl = document.getElementById('last-checked');
   const subscribeBtn = document.getElementById('subscribe-btn');
@@ -10,16 +12,53 @@
   const installSheet = document.getElementById('install-sheet');
   const sheetClose = document.getElementById('sheet-close');
   const subscribeStatusEl = document.getElementById('subscribe-status');
+  const manageStatusEl = document.getElementById('manage-status');
   const statTotal = document.getElementById('stat-total');
   const statUp = document.getElementById('stat-up');
   const statDown = document.getElementById('stat-down');
+  const addSiteForm = document.getElementById('add-site-form');
+  const managePanel = document.querySelector('.manage-panel');
+  const unlockBtn = document.getElementById('unlock-btn');
+  const unlockSheet = document.getElementById('unlock-sheet');
+  const unlockForm = document.getElementById('unlock-form');
+  const unlockCancel = document.getElementById('unlock-cancel');
+  const adminKeyInput = document.getElementById('admin-key-input');
 
   let deferredInstallPrompt = null;
+  let adminUnlocked = Boolean(sessionStorage.getItem(ADMIN_KEY_STORAGE));
+
+  function getAdminKey() {
+    return sessionStorage.getItem(ADMIN_KEY_STORAGE) || '';
+  }
+
+  function setAdminKey(key) {
+    sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+    adminUnlocked = true;
+    updateManageLock();
+  }
+
+  function clearAdminKey() {
+    sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+    adminUnlocked = false;
+    updateManageLock();
+  }
+
+  function updateManageLock() {
+    if (!managePanel || !unlockBtn) return;
+    managePanel.classList.toggle('locked', !adminUnlocked);
+    unlockBtn.textContent = adminUnlocked ? 'Lock' : 'Unlock';
+  }
 
   function setSubscribeMessage(message, type) {
     subscribeStatusEl.textContent = message || '';
     subscribeStatusEl.classList.remove('ok', 'err');
     if (type) subscribeStatusEl.classList.add(type);
+  }
+
+  function setManageMessage(message, type) {
+    manageStatusEl.textContent = message || '';
+    manageStatusEl.classList.remove('ok', 'err');
+    if (type) manageStatusEl.classList.add(type);
   }
 
   function escapeHtml(value) {
@@ -74,7 +113,7 @@
 
     if (!Array.isArray(sites) || sites.length === 0) {
       siteListEl.innerHTML =
-        '<li class="site-item"><div class="site-main"><div class="site-name">No sites configured</div><div class="site-meta">Add URLs in lib/sites.js</div></div><span class="badge unknown">N/A</span></li>';
+        '<li class="site-item"><div class="site-main"><div class="site-name">No sites yet</div><div class="site-meta">Unlock Manage URL list and add a website</div></div><span class="badge unknown">N/A</span></li>';
       return;
     }
 
@@ -83,6 +122,7 @@
         const status = (site.status || 'UNKNOWN').toUpperCase();
         const badgeClass =
           status === 'UP' ? 'up' : status === 'DOWN' ? 'down' : 'unknown';
+        const siteId = escapeHtml(site.id || site.url || '');
 
         return `
           <li class="site-item">
@@ -95,7 +135,14 @@
               </div>
               <div class="site-meta">${buildMeta(site)}</div>
             </div>
-            <span class="badge ${badgeClass}">${escapeHtml(status)}</span>
+            <div class="site-actions">
+              <span class="badge ${badgeClass}">${escapeHtml(status)}</span>
+              ${
+                adminUnlocked
+                  ? `<button type="button" class="remove-btn" data-remove-id="${siteId}">Remove</button>`
+                  : ''
+              }
+            </div>
           </li>
         `;
       })
@@ -147,6 +194,90 @@
       checkBtn.disabled = false;
       checkBtn.textContent = 'Check now';
     }
+  }
+
+  async function apiSites(method, body) {
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Admin-Key': getAdminKey(),
+      Authorization: `Bearer ${getAdminKey()}`,
+    };
+
+    const response = await fetch('/api/sites', {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearAdminKey();
+      }
+      throw new Error(data.error || `Request failed (${response.status})`);
+    }
+    return data;
+  }
+
+  async function addSite(event) {
+    event.preventDefault();
+
+    if (!adminUnlocked) {
+      openUnlockSheet();
+      return;
+    }
+
+    const name = document.getElementById('site-name').value.trim();
+    const url = document.getElementById('site-url').value.trim();
+    const addBtn = document.getElementById('add-site-btn');
+
+    addBtn.disabled = true;
+    setManageMessage('Saving…');
+
+    try {
+      await apiSites('POST', { name, url });
+      addSiteForm.reset();
+      setManageMessage('Website added. Running a fresh check…', 'ok');
+      await runCheckNow();
+      await loadDashboard();
+      setManageMessage('Website added to monitoring.', 'ok');
+    } catch (error) {
+      setManageMessage(error.message, 'err');
+    } finally {
+      addBtn.disabled = false;
+    }
+  }
+
+  async function removeSite(id) {
+    if (!adminUnlocked) {
+      openUnlockSheet();
+      return;
+    }
+
+    if (!window.confirm('Remove this website from monitoring?')) {
+      return;
+    }
+
+    setManageMessage('Removing…');
+    try {
+      await apiSites('DELETE', { id });
+      setManageMessage('Website removed.', 'ok');
+      await loadDashboard();
+    } catch (error) {
+      setManageMessage(error.message, 'err');
+    }
+  }
+
+  function openUnlockSheet() {
+    unlockSheet.hidden = false;
+    unlockSheet.classList.add('is-open');
+    adminKeyInput.value = getAdminKey();
+    setTimeout(() => adminKeyInput.focus(), 50);
+  }
+
+  function closeUnlockSheet() {
+    unlockSheet.classList.remove('is-open');
+    unlockSheet.hidden = true;
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -286,10 +417,72 @@
   installSheet.addEventListener('click', (event) => {
     if (event.target === installSheet) closeSheet();
   });
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !installSheet.hidden) closeSheet();
+
+  unlockBtn.addEventListener('click', () => {
+    if (adminUnlocked) {
+      clearAdminKey();
+      setManageMessage('Management locked.', 'ok');
+      loadDashboard();
+      return;
+    }
+    openUnlockSheet();
   });
 
+  unlockCancel.addEventListener('click', closeUnlockSheet);
+  unlockSheet.addEventListener('click', (event) => {
+    if (event.target === unlockSheet) closeUnlockSheet();
+  });
+
+  unlockForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const key = adminKeyInput.value.trim();
+    if (!key) return;
+
+    setAdminKey(key);
+
+    try {
+      // Validate the key without changing data: unknown id → 404 if authorized.
+      const probe = await fetch('/api/sites?id=__auth_probe__', {
+        method: 'DELETE',
+        headers: {
+          'X-Admin-Key': key,
+          Authorization: `Bearer ${key}`,
+        },
+      });
+
+      if (probe.status === 401) {
+        clearAdminKey();
+        setManageMessage('Wrong manage key.', 'err');
+        return;
+      }
+
+      if (probe.status !== 404 && !probe.ok) {
+        const data = await probe.json().catch(() => ({}));
+        throw new Error(data.error || `Could not unlock (${probe.status})`);
+      }
+
+      closeUnlockSheet();
+      setManageMessage('Unlocked. You can add or remove websites.', 'ok');
+      await loadDashboard();
+    } catch (error) {
+      clearAdminKey();
+      setManageMessage(error.message, 'err');
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (!installSheet.hidden) closeSheet();
+    if (!unlockSheet.hidden) closeUnlockSheet();
+  });
+
+  siteListEl.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-id]');
+    if (!button) return;
+    removeSite(button.getAttribute('data-remove-id'));
+  });
+
+  addSiteForm.addEventListener('submit', addSite);
   checkBtn.addEventListener('click', runCheckNow);
 
   subscribeBtn.addEventListener('click', async () => {
@@ -302,6 +495,8 @@
   });
 
   async function init() {
+    updateManageLock();
+
     try {
       await registerServiceWorker();
     } catch (error) {

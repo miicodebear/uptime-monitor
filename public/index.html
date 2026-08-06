@@ -83,6 +83,42 @@
         </ul>
       </section>
 
+      <section class="panel manage-panel" aria-labelledby="manage-heading">
+        <div class="panel-head">
+          <h2 id="manage-heading">Manage URL list</h2>
+          <button type="button" class="link-btn" id="unlock-btn">Unlock</button>
+        </div>
+
+        <form class="manage-form" id="add-site-form">
+          <label class="field">
+            <span>Display name</span>
+            <input
+              id="site-name"
+              name="name"
+              type="text"
+              maxlength="80"
+              placeholder="My website"
+              autocomplete="off"
+            />
+          </label>
+          <label class="field">
+            <span>Website URL</span>
+            <input
+              id="site-url"
+              name="url"
+              type="url"
+              required
+              placeholder="https://example.com"
+              autocomplete="off"
+            />
+          </label>
+          <button type="submit" class="btn btn-primary" id="add-site-btn">
+            Add website
+          </button>
+          <p class="status-line" id="manage-status" role="status"></p>
+        </form>
+      </section>
+
       <section class="actions">
         <button type="button" class="btn btn-primary" id="subscribe-btn">
           Subscribe to Alerts
@@ -135,6 +171,31 @@
         </p>
 
         <button type="button" class="btn btn-primary" id="sheet-close">Got it</button>
+      </div>
+    </div>
+
+    <div class="sheet" id="unlock-sheet" hidden>
+      <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="unlock-title">
+        <h3 id="unlock-title">Unlock URL management</h3>
+        <p class="unlock-copy">
+          Enter your manage key. Use the same value as
+          <strong>CRON_SECRET</strong> from Vercel / <code>.env.local</code>
+          (unless you set a separate <strong>ADMIN_SECRET</strong>).
+        </p>
+        <form id="unlock-form" class="manage-form compact">
+          <label class="field">
+            <span>Manage key</span>
+            <input
+              id="admin-key-input"
+              type="password"
+              required
+              autocomplete="current-password"
+              placeholder="Paste CRON_SECRET"
+            />
+          </label>
+          <button type="submit" class="btn btn-primary">Unlock</button>
+          <button type="button" class="btn btn-ghost" id="unlock-cancel">Cancel</button>
+        </form>
       </div>
     </div>
 

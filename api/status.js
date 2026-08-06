@@ -1,4 +1,4 @@
-const sites = require('../lib/sites');
+const { getMonitoredSites } = require('../lib/sitesStore');
 const { getStatus } = require('../lib/storage');
 
 function setCors(res) {
@@ -27,6 +27,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const sites = await getMonitoredSites();
     const stored = await getStatus();
 
     const list = sites.map((site) => {
@@ -39,6 +40,7 @@ module.exports = async function handler(req, res) {
 
       if (saved) {
         return {
+          id: site.id || site.url,
           name: site.name,
           url: site.url,
           domain: saved.domain || domainFromUrl(site.url),
@@ -52,6 +54,7 @@ module.exports = async function handler(req, res) {
       }
 
       return {
+        id: site.id || site.url,
         name: site.name,
         url: site.url,
         domain: domainFromUrl(site.url),
